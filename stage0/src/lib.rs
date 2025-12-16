@@ -54,6 +54,7 @@ use zeroize::Zeroize;
 
 mod acpi;
 mod acpi_tables;
+mod acpi_verify;
 pub mod allocator;
 mod apic;
 mod cmos;
@@ -184,6 +185,9 @@ pub fn rust64_start<P: hal::Platform>() -> ! {
     let acpi_digest = acpi_digest.finalize();
     let mut acpi_sha2_256_digest = Measurement::default();
     acpi_sha2_256_digest[..].copy_from_slice(&acpi_digest[..]);
+
+    // Verify ACPI table integrity against cmdline-specified hash (if present).
+    acpi_verify::verify_acpi_hash(&cmdline, &acpi_sha2_256_digest);
 
     let ram_disk_sha2_256_digest =
         initramfs::try_load_initial_ram_disk(&mut fwcfg, zero_page.e820_table(), &kernel)
