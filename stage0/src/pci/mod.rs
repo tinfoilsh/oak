@@ -31,6 +31,7 @@ use crate::{
 
 mod config_access;
 mod device;
+mod ich9;
 mod machine;
 mod resource_allocator;
 
@@ -360,6 +361,10 @@ pub fn init<P: Platform>(
             init_machine::<P, I440fx>(root_bus, firmware, zero_page, config_access)
         }
         (Q35::PCI_VENDOR_ID, Q35::PCI_DEVICE_ID) => {
+            // Initialize ICH9 LPC bridge ACPI PM registers before accessing ACPI tables.
+            // This must happen before fw_cfg ACPI table access, as QEMU regenerates
+            // FADT with the current PM base value on first access.
+            ich9::init_ich9_pm(config_access.lock().as_mut())?;
             init_machine::<P, Q35>(root_bus, firmware, zero_page, config_access)
         }
         (vendor_id, device_id) => {
