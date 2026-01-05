@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'stage0-v*'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -14,20 +16,14 @@ permissions:
 jobs:
   release:
     name: Build and Release Stage0
-    runs-on: ubuntu-24.04
+    runs-on: large
     outputs:
       sha256: ${{ steps.hash.outputs.sha256 }}
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Free disk space
-        run: |
-          sudo apt-get remove --yes \
-              '^dotnet-.*' '^llvm-.*' 'php.*' azure-cli powershell
-          sudo apt-get autoremove --yes
-          sudo apt clean
-          sudo rm -rf "${AGENT_TOOLSDIRECTORY}" /usr/local/.ghcup /opt/ghc /usr/share/dotnet
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          submodules: recursive 
 
       - name: Install Bazel
         run: |
@@ -54,7 +50,7 @@ jobs:
           subject-path: 'out/stage0_bin'
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: stage0
           path: out/
