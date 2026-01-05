@@ -1,0 +1,105 @@
+name: Release Stage0
+
+on:
+  push:
+    tags:
+      - 'stage0-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    name: Build and Release Stage0
+    runs-on: ubuntu-24.04
+    outputs:
+      sha256: ${{ steps.hash.outputs.sha256 }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo apt-get remove --yes \
+              '^dotnet-.*' '^llvm-.*' 'php.*' azure-cli powershell
+          sudo apt-get autoremove --yes
+          sudo apt clean
+          sudo rm -rf "${AGENT_TOOLSDIRECTORY}" /usr/local/.ghcup /opt/ghc /usr/share/dotnet
+
+      - name: Install Bazel
+        run: |
+          sudo curl -fsSL https://github.com/bazelbuild/bazelisk/releases/download/v1.22.0/bazelisk-linux-amd64 \
+            -o /usr/local/bin/bazel
+          sudo chmod +x /usr/local/bin/bazel
+
+      - name: Build stage0_bin
+        run: bazel build --config=release //stage0_bin:stage0_bin
+
+      - name: Extract artifacts
+        id: hash
+        run: |
+          mkdir -p out
+          cp bazel-bin/stage0_bin/stage0_bin out/
+          SHA=$(sha256sum out/stage0_bin | awk '{print $1}')
+          echo "sha256=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "${SHA}  stage0_bin" > out/stage0_bin.sha256
+
+      - name: Attest stage0_bin
+        if: startsWith(github.ref, 'refs/tags/stage0-v')
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: 'out/stage0_bin'
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage0
+          path: out/
+
+      - name: Prepare versioned artifacts
+        if: startsWith(github.ref, 'refs/tags/stage0-v')
+        run: |
+          cd out
+          # Extract version from tag (stage0-v0.0.2 -> v0.0.2)
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#stage0-}"
+          
+          mv stage0_bin "stage0-${VERSION}.fd"
+          mv stage0_bin.sha256 "stage0-${VERSION}.fd.sha256"
+          
+          echo "Versioned artifacts:"
+          ls -la
+
+      - name: Upload to R2
+        if: startsWith(github.ref, 'refs/tags/stage0-v')
+        uses: ryand56/r2-upload-action@b801a390acbdeb034c5e684ff5e1361c06639e7c
+        with:
+          r2-account-id: ${{ secrets.R2_IMAGES_ACCOUNT_ID }}
+          r2-access-key-id: ${{ secrets.R2_IMAGES_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_IMAGES_SECRET_ACCESS_KEY }}
+          r2-bucket: ${{ secrets.R2_IMAGES_BUCKET }}
+          source-dir: out
+          destination-dir: ./fw
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/stage0-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#stage0-}"
+          
+          gh release create "${{ github.ref_name }}" \
+            --latest=false \
+            -R ${{ github.repository }} \
+            --title "${{ github.ref_name }}" \
+            --notes "**SHA256:** \`${{ steps.hash.outputs.sha256 }}\`
+
+          ### Download
+          - Firmware: https://images.tinfoil.sh/fw/stage0-${VERSION}.fd" \
+            out/stage0-${VERSION}.fd \
+            out/stage0-${VERSION}.fd.sha256
+
