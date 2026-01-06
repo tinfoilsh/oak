@@ -27,8 +27,12 @@ jobs:
 
       - name: Install Bazel
         run: |
-          sudo curl -fsSL https://github.com/bazelbuild/bazelisk/releases/download/v1.22.0/bazelisk-linux-amd64 \
-            -o /usr/local/bin/bazel
+          BAZELISK_VERSION="1.22.0"
+          BAZELISK_SHA256="a110a613ac57081482348b9fa1719ede1fc9bb45a010f82f15eaeb1e9b657e29"
+          curl -fsSL "https://github.com/bazelbuild/bazelisk/releases/download/v${BAZELISK_VERSION}/bazelisk-linux-amd64" \
+            -o /tmp/bazelisk
+          echo "${BAZELISK_SHA256}  /tmp/bazelisk" | sha256sum --check --strict
+          sudo mv /tmp/bazelisk /usr/local/bin/bazel
           sudo chmod +x /usr/local/bin/bazel
 
       - name: Build stage0_bin
@@ -71,14 +75,14 @@ jobs:
 
       - name: Upload to R2
         if: startsWith(github.ref, 'refs/tags/stage0-v')
-        uses: ryand56/r2-upload-action@b801a390acbdeb034c5e684ff5e1361c06639e7c
-        with:
-          r2-account-id: ${{ secrets.R2_IMAGES_ACCOUNT_ID }}
-          r2-access-key-id: ${{ secrets.R2_IMAGES_ACCESS_KEY_ID }}
-          r2-secret-access-key: ${{ secrets.R2_IMAGES_SECRET_ACCESS_KEY }}
-          r2-bucket: ${{ secrets.R2_IMAGES_BUCKET }}
-          source-dir: out
-          destination-dir: ./fw
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_IMAGES_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_IMAGES_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL: https://${{ secrets.R2_IMAGES_ACCOUNT_ID }}.r2.cloudflarestorage.com
+        run: |
+          for file in out/*; do
+            aws s3 cp "$file" "s3://${{ secrets.R2_IMAGES_BUCKET }}/fw/$(basename "$file")"
+          done
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/stage0-v')
